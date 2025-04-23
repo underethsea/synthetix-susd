@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SNX APR Calculator</title>
+  <style>
+    body { font-family: sans-serif; padding: 2rem; background: #f7f7f7; }
+    h1 { font-size: 1.5rem; margin-bottom: 1rem; }
+    pre { background: white; padding: 1rem; border-radius: 8px; box-shadow: 0 0 5px rgba(0,0,0,0.1); }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.8.1/dist/ethers.umd.min.js"></script>
+</head>
+<body>
+  <h1>SNX APR Calculator</h1>
+  <button onclick="main()">Calculate APR</button>
+  <pre id="output">Loading...</pre>
+
+  <script>
+    const VAULT = '0xFa1DF09D8d09D6E8FAB2a6C4712fEa02ce203e99';
+    const OP_SUSD = '0x8c6f28f2F1A3C87F0f938b96d27520d9751ec8d9';
+    const ETH_SUSD = '0xb2F30A7C980f052f02563fb518dcc39e6bf38175';
+    const SNX_EMISSIONS = 10_000_000;
+
+    const ETH_RPC = 'https://eth.llamarpc.com';
+    const OP_RPC = 'https://mainnet.optimism.io';
+
+    const ABI = [
+      'function balanceOf(address) view returns (uint256)',
+      'function decimals() view returns (uint8)',
+    ];
+
+    async function getBalance(rpcUrl, token, vault) {
+      const provider = new ethers.JsonRpcProvider(rpcUrl);
+      const contract = new ethers.Contract(token, ABI, provider);
+      const [bal, dec] = await Promise.all([
+        contract.balanceOf(vault),
+        contract.decimals(),
+      ]);
+      return parseFloat(ethers.formatUnits(bal, dec));
+    }
+
+    async function getPrices() {
+      const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=nusd,havven&vs_currencies=usd');
+      const json = await res.json();
+      return {
+        susd: json.nusd.usd,
+        snx: json.havven.usd,
+      };
+    }
+
+    async function main() {
+      const out = document.getElementById('output');
+      out.textContent = 'Fetching data...';
+      try {
+        const [ethBal, opBal, prices] = await Promise.all([
+          getBalance(ETH_RPC, ETH_SUSD, VAULT),
+          getBalance(OP_RPC, OP_SUSD, VAULT),
+          getPrices(),
+        ]);
+
+        const totalSUSD = ethBal + opBal;
+        const vaultValue = totalSUSD * prices.susd;
+        const rewardValue = SNX_EMISSIONS * prices.snx;
+        const apr = (rewardValue / vaultValue) * 100;
+
+        out.textContent = `
+sUSD Price: $${prices.susd.toFixed(4)}
+SNX Price:  $${prices.snx.toFixed(4)}
+
+Total sUSD in Vaults: ${totalSUSD.toFixed(2)} sUSD
+Vault Value:          $${vaultValue.toFixed(2)}
+Annual Rewards:       $${rewardValue.toFixed(2)}
+
+APR: ${apr.toFixed(2)}%
+        `.trim();
+      } catch (err) {
+        out.textContent = 'Error:\n' + err;
+      }
+    }
+
+    main();
+  </script>
+</body>
+</html>
